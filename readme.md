@@ -7,7 +7,9 @@
 # PDFormer
 MSFormer: Multi-scale Transformer with Hierarchical and Local Awareness for Traffic Flow Prediction
 
-This is a PyTorch implementation of Multi-scale Transformer with Hierarchical and Local Awareness for Traffic Flow Prediction (**MSFormer**) for traffic flow prediction, as described in our paper: [Jiawei Jiang](https://github.com/aptx1231)\*, [Chengkai Han](https://github.com/NickHan-cs)\*, Wayne Xin Zhao, Jingyuan Wang,  **[Propagation Delay-aware Dynamic Long-range Transformer for Traffic Flow Prediction](https://ojs.aaai.org/index.php/AAAI/article/view/25556)**, AAAI2023.
+This is a PyTorch implementation of Multi-scale Transformer with Hierarchical and Local Awareness for Traffic Flow Prediction (**MSFormer**) for traffic flow prediction. 
+
+[//]: # (as described in our paper: [Jiawei Jiang]&#40;https://github.com/aptx1231&#41;\*, [Chengkai Han]&#40;https://github.com/NickHan-cs&#41;\*, Wayne Xin Zhao, Jingyuan Wang,  **[Propagation Delay-aware Dynamic Long-range Transformer for Traffic Flow Prediction]&#40;https://ojs.aaai.org/index.php/AAAI/article/view/25556&#41;**, AAAI2023.)
 
 ## Requirements
 
