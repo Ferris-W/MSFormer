@@ -135,13 +135,11 @@ class GraphChannelAttentionLayer(nn.Module):
 
     def forward(self, graphs):  # batch, input_window, num_graph, n_node, n_node
         graphs = F.normalize(graphs, dim=-1, p=1)
-        weights = F.softmax(self.weight, dim=1).to(self.device)  # dim =1 or 0  12 2 1 1
-        # print(weights.squeeze())
-        agg = torch.sum(graphs * weights, dim=2)  # 16, 12, 170, 170
+        weights = F.softmax(self.weight, dim=1).to(self.device)
+        agg = torch.sum(graphs * weights, dim=2)
         mask = torch.zeros_like(agg).to(self.device).bool()
         _, indices = torch.topk(agg, k=self.sem_delta, dim=-1, sorted=False)
         mask.scatter_(-1, indices, True)
-        # mask.register_hook(lambda grad: print(grad))
         return F.normalize(mask * agg, dim=-1, p=1)
 
 
@@ -153,10 +151,11 @@ class GraphFusionLayer(nn.Module):
                                                        num_channel=num_channel,
                                                        device=device, sem_delta=sem_delta)
 
-    def forward(self, sim_st, period_matrix):  # 16, 12, 170, 170; 16, 12, 170, 170; 170, 170
+    def forward(self, sim_st, period_matrix):
         graphs = torch.stack([sim_st, period_matrix], dim=2)
         fused_graph = self.channel_attn(graphs)
         return fused_graph
+
 
 class GraphMetricLearning(nn.Module):
     def __init__(self, input_window, in_dim, hid_dim, num_head, device=torch.device('cpu'), gl_drop=0.1):
@@ -213,7 +212,6 @@ class STSelfAttention(nn.Module):
         self.output_dim = output_dim
         self.sem_delta = sem_delta
 
-        # hyper : dimensions of sem, geo, tem, period, metric_dim
         self.period_dim = 32  # 64
         self.metric_dim = 32
         self.metric_head_num = 2
@@ -257,7 +255,7 @@ class STSelfAttention(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
-    def forward(self, x, x_ts, daytime_embed, weekday_embed, x_patterns, pattern_keys, geo_mask=None):
+    def forward(self, x, x_ts, daytime_embed, weekday_embed, geo_mask=None):
         B, T, N, D = x.shape
         t_q = self.t_q_conv(x.permute(0, 3, 1, 2)).permute(0, 3, 2, 1)
         t_k = self.t_k_conv(x.permute(0, 3, 1, 2)).permute(0, 3, 2, 1)
@@ -293,11 +291,6 @@ class STSelfAttention(nn.Module):
         geo_attn = self.geo_attn_drop(geo_attn)
         geo_x = (geo_attn @ geo_v).transpose(2, 3).reshape(B, T, N, int(D * self.geo_ratio))
 
-        '''
-            pooling x base the sem_clusters to generate embeddings from different scales.
-            x: 16 12 170 64
-            sem_clus_x: 16 12 sem_clus_num 64
-        '''
         sem_clus_x = torch.stack([torch.mean(x[..., v, :], dim=-2) for k, v in self.sem_clus_proj['c2n'].items()], dim=-2)
         sem_clus_q = self.sem_clus_q_conv(sem_clus_x.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
         sem_clus_k = self.sem_clus_k_conv(sem_clus_x.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
@@ -307,9 +300,6 @@ class STSelfAttention(nn.Module):
         sem_k = self.sem_k_conv(x.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
         sem_v = self.sem_v_conv(x.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
 
-        '''
-            sem q k v concatenate 
-        '''
         sem_q = self.scale_sem_q_proj(torch.cat([sem_clus_q[..., self.sem_clus_proj['n2c'], :], sem_q], dim=-1))
         sem_k = self.scale_sem_k_proj(torch.cat([sem_clus_k[..., self.sem_clus_proj['n2c'], :], sem_k], dim=-1))
         sem_v = self.scale_sem_v_proj(torch.cat([sem_clus_v[..., self.sem_clus_proj['n2c'], :], sem_v], dim=-1))
@@ -319,20 +309,14 @@ class STSelfAttention(nn.Module):
         sem_v = sem_v.reshape(B, T, N, self.sem_num_heads, self.head_dim).permute(0, 1, 3, 2, 4)
         sem_attn = (sem_q @ sem_k.transpose(-2, -1)) * self.scale  # 16 12 2 170 170
 
-        '''
-            x_ts: time series vector for each node, to capture the short range relation. shape: 16, 170, 12
-        '''
-        sim_ts = self.ts_metric(x_ts)  # 16 12 170 170   # need negative weights?
+        sim_ts = self.ts_metric(x_ts)
         day_proj = self.day_proj(daytime_embed)
         week_proj = self.week_proj(weekday_embed)
-        time_proj = torch.concatenate([day_proj, week_proj], dim=-1)[:, :, 0, :]  # 16 12 64
-        # sim_time = self.period_metric(time_proj).squeeze()  # 16 12 12
+        time_proj = torch.concatenate([day_proj, week_proj], dim=-1)[:, :, 0, :]
         sim_time = F.normalize(self.period_metric(time_proj).squeeze(), dim=-1, p=1)
-        # 16 12 12 1 1 * 16 1 12 170 170 sum-> 16 12 170 170
         period_matrix = (sim_time.unsqueeze(3).unsqueeze(4) * sim_ts.unsqueeze(1)).sum(2)
-        final_mask = self.fusion_layer(sim_ts, period_matrix).unsqueeze(2)  # 16 12 1 170 170
+        final_mask = self.fusion_layer(sim_ts, period_matrix).unsqueeze(2)
 
-        # sem_attn.masked_fill_(final_mask, float('-inf'))
         sem_attn = sem_attn * final_mask
         sem_attn = sem_attn.softmax(dim=-1)
         sem_attn = self.sem_attn_drop(sem_attn)
@@ -362,48 +346,6 @@ class Mlp(nn.Module):
         return x
 
 
-class TemporalSelfAttention(nn.Module):
-    def __init__(
-            self, dim, dim_out, t_attn_size, t_num_heads=6, qkv_bias=False,
-            attn_drop=0., proj_drop=0., device=torch.device('cpu'),
-    ):
-        super().__init__()
-        assert dim % t_num_heads == 0
-        self.t_num_heads = t_num_heads
-        self.head_dim = dim // t_num_heads
-        self.scale = self.head_dim ** -0.5
-        self.device = device
-        self.t_attn_size = t_attn_size
-
-        self.t_q_conv = nn.Conv2d(dim, dim, kernel_size=1, bias=qkv_bias)
-        self.t_k_conv = nn.Conv2d(dim, dim, kernel_size=1, bias=qkv_bias)
-        self.t_v_conv = nn.Conv2d(dim, dim, kernel_size=1, bias=qkv_bias)
-        self.t_attn_drop = nn.Dropout(attn_drop)
-
-        self.proj = nn.Linear(dim, dim_out)
-        self.proj_drop = nn.Dropout(proj_drop)
-
-    def forward(self, x):
-        B, T, N, D = x.shape
-        t_q = self.t_q_conv(x.permute(0, 3, 1, 2)).permute(0, 3, 2, 1)
-        t_k = self.t_k_conv(x.permute(0, 3, 1, 2)).permute(0, 3, 2, 1)
-        t_v = self.t_v_conv(x.permute(0, 3, 1, 2)).permute(0, 3, 2, 1)
-        t_q = t_q.reshape(B, N, T, self.t_num_heads, self.head_dim).permute(0, 1, 3, 2, 4)
-        t_k = t_k.reshape(B, N, T, self.t_num_heads, self.head_dim).permute(0, 1, 3, 2, 4)
-        t_v = t_v.reshape(B, N, T, self.t_num_heads, self.head_dim).permute(0, 1, 3, 2, 4)
-
-        t_attn = (t_q @ t_k.transpose(-2, -1)) * self.scale
-
-        t_attn = t_attn.softmax(dim=-1)
-        t_attn = self.t_attn_drop(t_attn)
-
-        t_x = (t_attn @ t_v).transpose(2, 3).reshape(B, N, T, D).transpose(1, 2)
-
-        x = self.proj(t_x)
-        x = self.proj_drop(x)
-        return x
-
-
 class STEncoderBlock(nn.Module):
 
     def __init__(
@@ -427,20 +369,20 @@ class STEncoderBlock(nn.Module):
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
 
-    def forward(self, x, x_ts, daytime_embed, weekday_embed, x_patterns, pattern_keys, geo_mask=None):
+    def forward(self, x, x_ts, daytime_embed, weekday_embed, geo_mask=None):
         if self.type_ln == 'pre':
             x = x + self.drop_path(
-                self.st_attn(self.norm1(x), x_ts, daytime_embed, weekday_embed, x_patterns, pattern_keys,
+                self.st_attn(self.norm1(x), x_ts, daytime_embed, weekday_embed,
                              geo_mask=geo_mask))
             x = x + self.drop_path(self.mlp(self.norm2(x)))
         elif self.type_ln == 'post':
             x = self.norm1(x + self.drop_path(
-                self.st_attn(x, x_ts, x_patterns, pattern_keys, geo_mask=geo_mask)))
+                self.st_attn(x, x_ts, geo_mask=geo_mask)))
             x = self.norm2(x + self.drop_path(self.mlp(x)))
         return x
 
 
-class PDFormer(AbstractTrafficStateModel):
+class MSFormer(AbstractTrafficStateModel):
     def __init__(self, config, data_feature):
         super().__init__(config, data_feature)
 
@@ -523,7 +465,6 @@ class PDFormer(AbstractTrafficStateModel):
             self.geo_mask[sh_mx >= self.far_mask_delta] = 1
             self.geo_mask = self.geo_mask.bool()
 
-        self.pattern_keys = torch.from_numpy(data_feature.get('pattern_keys')).float().to(self.device)
         self.pattern_embeddings = nn.ModuleList([
             TokenEmbedding(self.s_attn_size, self.embed_dim) for _ in range(self.output_dim)
         ])
@@ -560,30 +501,12 @@ class PDFormer(AbstractTrafficStateModel):
 
     def forward(self, batch, lap_mx=None):
         x = batch['X']     # 16 12 170 9
-        T = x.shape[1]
-        x_pattern_list = []
-        for i in range(self.s_attn_size):
-            x_pattern = F.pad(
-                x[:, :T + i + 1 - self.s_attn_size, :, :self.output_dim],
-                (0, 0, 0, 0, self.s_attn_size - 1 - i, 0),
-                "constant", 0,
-            ).unsqueeze(-2)
-            x_pattern_list.append(x_pattern)
-        x_patterns = torch.cat(x_pattern_list, dim=-2)  # (B, T, N, s_attn_size, output_dim)
-
-        x_pattern_list = []
-        pattern_key_list = []
-        for i in range(self.output_dim):
-            x_pattern_list.append(self.pattern_embeddings[i](x_patterns[..., i]).unsqueeze(-1))
-            pattern_key_list.append(self.pattern_embeddings[i](self.pattern_keys[..., i]).unsqueeze(-1))
-        x_patterns = torch.cat(x_pattern_list, dim=-1)
-        pattern_keys = torch.cat(pattern_key_list, dim=-1)
 
         enc, x_ts, daytime_embed, weekday_embed = self.enc_embed_layer(x, lap_mx)
 
         skip = 0
         for i, encoder_block in enumerate(self.encoder_blocks):
-            enc = encoder_block(enc, x_ts, daytime_embed, weekday_embed, x_patterns, pattern_keys, self.geo_mask)
+            enc = encoder_block(enc, x_ts, daytime_embed, weekday_embed, self.geo_mask)
             skip += self.skip_convs[i](enc.permute(0, 3, 2, 1))
 
         skip = self.end_conv1(F.relu(skip.permute(0, 3, 2, 1)))

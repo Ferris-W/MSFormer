@@ -10,7 +10,7 @@ from libcity.utils import reduce_array
 from tqdm import tqdm
 
 
-class PDFormerExecutor(TrafficStateExecutor):
+class MSFormerExecutor(TrafficStateExecutor):
 
     def __init__(self, config, model):
         self.no_load = config.get('no_load', [])

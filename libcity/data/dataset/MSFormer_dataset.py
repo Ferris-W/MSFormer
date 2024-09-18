@@ -7,7 +7,7 @@ from sklearn.mixture import GaussianMixture
 import networkx as nx
 import pymetis
 
-class PDFormerDataset(TrafficStatePointDataset):
+class MSFormerDataset(TrafficStatePointDataset):
 
     def __init__(self, config):
         self.type_short_path = config.get('type_short_path', 'hop')
@@ -28,7 +28,6 @@ class PDFormerDataset(TrafficStatePointDataset):
 
     def _get_sem_clus_proj(self):
         self._logger.info('Loading semantic clusters......')
-        cache_path = './libcity/cache/dataset_cache/dtw_' + self.dataset + '.npy'
         for ind, filename in enumerate(self.data_files):
             if ind == 0:
                 df = self._load_dyna(filename)
@@ -121,33 +120,12 @@ class PDFormerDataset(TrafficStatePointDataset):
                                 self.batch_size, self.num_workers, pad_with_last_sample=self.pad_with_last_sample,
                                 distributed=self.distributed)
         self.num_batches = len(self.train_dataloader)
-        self.pattern_key_file = os.path.join(
-            './libcity/cache/dataset_cache/', 'pattern_keys_{}_{}_{}_{}_{}_{}'.format(
-                self.cluster_method, self.dataset, self.cand_key_days, self.s_attn_size, self.n_cluster,
-                self.cluster_max_iter))  # 21 3 16 5
-        if not os.path.exists(self.pattern_key_file + '.npy'):
-            cand_key_time_steps = self.cand_key_days * self.points_per_day  # x_train 10700 12 170 9
-            pattern_cand_keys = x_train[:cand_key_time_steps, :self.s_attn_size, :, :self.output_dim].swapaxes(1,
-                                                                                                               2).reshape(
-                -1, self.s_attn_size, self.output_dim)
-            self._logger.info("Clustering...")
-            if self.cluster_method == "kshape":
-                km = KShape(n_clusters=self.n_cluster, max_iter=self.cluster_max_iter).fit(pattern_cand_keys)
-            else:
-                km = TimeSeriesKMeans(n_clusters=self.n_cluster, metric="softdtw", max_iter=self.cluster_max_iter).fit(
-                    pattern_cand_keys)
-            self.pattern_keys = km.cluster_centers_
-            np.save(self.pattern_key_file, self.pattern_keys)
-            self._logger.info("Saved at file " + self.pattern_key_file + ".npy")
-        else:
-            self.pattern_keys = np.load(self.pattern_key_file + ".npy")  # 16 3 1
-            self._logger.info("Loaded file " + self.pattern_key_file + ".npy")
 
         return self.train_dataloader, self.eval_dataloader, self.test_dataloader
 
     def get_data_feature(self):
         return {"scaler": self.scaler, "adj_mx": self.adj_mx, "sd_mx": self.sd_mx, "sh_mx": self.sh_mx,
                 "ext_dim": self.ext_dim, "num_nodes": self.num_nodes, "feature_dim": self.feature_dim,
-                "output_dim": self.output_dim, "num_batches": self.num_batches, "pattern_keys": self.pattern_keys,
+                "output_dim": self.output_dim, "num_batches": self.num_batches,
                 "sem_clus_proj": self.sem_clus_proj, "sem_clus_num": self.sem_clus_num,
                 "geo_clus_proj": self.geo_clus_proj}

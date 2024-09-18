@@ -1,5 +1,5 @@
-from libcity.model.traffic_flow_prediction.PDFormer import PDFormer
+from libcity.model.traffic_flow_prediction.MSFormer import MSFormer
 
 __all__ = [
-    "PDFormer",
+    "MSFormer",
 ]
