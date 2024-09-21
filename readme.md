@@ -4,7 +4,7 @@
 
 [//]: # (Details about our MSFormer are shown in MSFormer.pptx)
 
-# PDFormer
+# MSFormer
 MSFormer: Multi-scale Transformer with Hierarchical and Local Awareness for Traffic Flow Prediction
 
 This is a PyTorch implementation of Multi-scale Transformer with Hierarchical and Local Awareness for Traffic Flow Prediction (**MSFormer**) for traffic flow prediction. 
