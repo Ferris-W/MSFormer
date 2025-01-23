@@ -47,7 +47,9 @@ class MSFormerDataset(TrafficStatePointDataset):
 
     def _get_geo_clus_proj(self):
         self._logger.info('Loading geographic clusters......')
-        (edgecuts, parts) = pymetis.part_graph(self.geo_clus_num, self.adj_mx)
+        adj = self.adj_mx
+        adj_list = [np.argwhere(row != 0).ravel() for row in adj]
+        (edgecuts, parts) = pymetis.part_graph(self.geo_clus_num, adj_list)
         parts = np.array(parts)
         clus2node = {i: np.argwhere(parts == i).squeeze() for i in range(self.geo_clus_num)}
         geo_clus_proj = {'c2n': clus2node,
